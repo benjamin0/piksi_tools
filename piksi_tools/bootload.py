@@ -32,6 +32,7 @@ from sbp.bootload import *
 from sbp.logging import *
 from sbp.piksi import *
 from sbp.client import Handler, Framer
+from sbp.client.drivers.network_drivers import TCPDriver
 
 class Bootloader():
   """
@@ -152,9 +153,12 @@ def get_args():
                       help="use pylibftdi instead of pyserial.",
                       action="store_true")
   parser.add_argument("-t", "--timeout", nargs=1, type=int,
-                      default=[None], 
+                      default=[None],
                       help="Specify Timeout for which to wait for handshake.",
                       )
+  parser.add_argument("--tcp", action="store_true", default=False,
+                      help="Use a TCP connection instead of a local serial port. \
+                      If TCP is selected, the port is interpreted as host:port")
   args = parser.parse_args()
   if args.stm and args.m25:
     parser.error("Only one of -s or -m options may be chosen")
@@ -178,8 +182,27 @@ def main():
   use_m25 = args.m25
   use_stm = args.stm
   erase = args.erase
+
+  if args.tcp:
+    try:
+      host, port = port.split(':')
+      selected_driver = TCPDriver(host, int(port))
+    except:
+      raise Exception('Invalid host and/or port')
+  else:
+    if not port:
+      port_chooser = PortChooser()
+      is_ok = port_chooser.configure_traits()
+      port = port_chooser.port
+      if not port or not is_ok:
+        print "No serial device selected!"
+        sys.exit(1)
+      else:
+        print "Using serial device '%s'" % port
+    selected_driver = serial_link.get_driver(args.ftdi, port, baud, args.file)
+
   # Driver with context
-  with serial_link.get_driver(use_ftdi, port, baud) as driver:
+  with selected_driver as driver:
     # Handler with context
     with Handler(Framer(driver.read, driver.write)) as link:
       link.add_callback(serial_link.log_printer, SBP_MSG_LOG)
@@ -195,7 +218,7 @@ def main():
           return
         if not (handshake_received and piksi_bootloader.handshake_received):
           print "No handshake received."
-          sys.exit(1) 
+          sys.exit(1)
         print "received."
         print "Piksi Onboard Bootloader Version:", piksi_bootloader.version
         if piksi_bootloader.sbp_version > (0, 0):
