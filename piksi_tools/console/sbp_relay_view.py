@@ -64,8 +64,8 @@ class SbpRelayView(HasTraits):
   disconnect_rover = Button(label='Disconnect from Skylark', toggle=True, width=32)
   base_pragma = String()
   rover_pragma = String()
-  base_device = String()
-  rover_deivce = String()
+  base_device_uid = String()
+  rover_device_uid = String()
   toggle=True
   view = View(
            VGroup(
@@ -99,11 +99,16 @@ class SbpRelayView(HasTraits):
                    spring),
                  HGroup(spring,
                         Item('base_pragma',  label='Base option '),
-                        Item('base_device',  label='Base device '),
+                        Item('base_device_uid',  label='Base device '),
                         spring),
+                #  HGroup(spring,
+                #         Item('base_device',  label='Base device '),
+                #         spring),
+                #  HGroup(spring,
+                #         spring),
                  HGroup(spring,
                         Item('rover_pragma', label='Rover option'),
-                        Item('rover_device', label='Rover device'),
+                        Item('rover_device_uid', label='Rover device'),
                         spring),),
                VGroup(
                  Item('http_information', label="Notes", height=10,
@@ -199,6 +204,9 @@ class SbpRelayView(HasTraits):
     """
     i = 0
     repeats = 5
+    print self.rover_device_uid
+    print self.device_uid
+    print self.rover_device_uid or self.device_uid
     _rover_pragma = self.rover_pragma
     _rover_device_uid = self.rover_device_uid or self.device_uid
     while self.http and not self.http.connect_read(_rover_device_uid, pragma=_rover_pragma):
@@ -238,6 +246,9 @@ class SbpRelayView(HasTraits):
       return
     try:
       _base_pragma = self.base_pragma
+      print self.base_device_uid
+      print self.device_uid
+      print self.base_device_uid or self.device_uid
       _base_device_uid = self.base_device_uid or self.device_uid
       if not self.http.connect_write(self.link, _base_device_uid, pragma=_base_pragma):
         msg = ("\nUnable to connect to Skylark!\n\n"
