@@ -24,6 +24,7 @@ from os.path import expanduser
 from piksi_tools.serial_link import swriter, get_uuid, DEFAULT_BASE
 from piksi_tools.version import VERSION as CONSOLE_VERSION
 from piksi_tools.heartbeat import Heartbeat
+from piksi_tools import assistance
 from sbp.client.drivers.pyftdi_driver import PyFTDIDriver
 from sbp.client.drivers.pyserial_driver import PySerialDriver
 from sbp.client.drivers.network_drivers import TCPDriver
@@ -34,6 +35,7 @@ from sbp.piksi import *
 from sbp.navigation import *
 from sbp.system import SBP_MSG_HEARTBEAT
 from sbp.client import Forwarder
+from sbp.system import SBP_MSG_STARTUP
 
 # Shut chaco up for now
 import warnings
@@ -70,6 +72,10 @@ def get_args():
                       help="Allow software upgrade over serial.")
   parser.add_argument('--show-usage', action='store_true',
                       help="Show usage help in a GUI popup.")
+  parser.add_argument("--assistance",
+                      help="Send acquisition assistance data (ephemeris,\
+                      coarse location, coarse time)",
+                      action="store_true")
   return parser
 args = None
 parser = get_args()
@@ -498,6 +504,24 @@ class SwiftConsole(HasTraits):
     else: 
       self._csv_logging_button_action()
   
+  def send_assistance_thread(self):
+    self.link(assistance.get_data_make_msg())
+
+    # A simple class that has a `to_binary` method which just returns the
+    # binary data. This is required for the SBP Framer which calls
+    # `to_binary` in `__call__`.
+    class EphemerisBinary(object):
+      def __init__(self, data):
+        self.data = data
+      def to_binary(self):
+        return self.data
+
+    self.link(EphemerisBinary(assistance.get_ephemeris()))
+  
+  def send_assistance(self, sbp_msg, **metadata):
+    self.assistance_thread = Thread(target=self.send_assistance_thread)
+    self.assistance_thread.start()
+
   def __enter__(self):
     return self
 
@@ -506,7 +530,7 @@ class SwiftConsole(HasTraits):
   
   def __init__(self, link, update, log_level_filter, skip_settings=False, error=False, 
                port=None, json_logging=False, log_dirname=None, override_filename=None, 
-               log_console=False, skylark="", serial_upgrade=False):
+               log_console=False, skylark="", serial_upgrade=False, use_assistance=False):
     self.error = error
     self.port = port
     self.dev_id = str(os.path.split(port)[1])
@@ -542,6 +566,8 @@ class SwiftConsole(HasTraits):
       self.link.add_callback(self.ext_event_callback, SBP_MSG_EXT_EVENT)
       self.link.add_callback(self.cmd_resp_callback, SBP_MSG_COMMAND_RESP)
       self.link.add_callback(self.update_on_heartbeat, SBP_MSG_HEARTBEAT)
+      if use_assistance:
+        self.link.add_callback(self.send_assistance, SBP_MSG_STARTUP)
       self.dep_handler = DeprecatedMessageHandler(link)
       settings_read_finished_functions = []
       self.tracking_view = TrackingView(self.link)
@@ -698,7 +724,7 @@ with selected_driver as driver:
     with SwiftConsole(link, args.update, log_filter, port=port, error=args.error, 
                  json_logging=args.log, log_dirname=args.log_dirname, override_filename=args.logfilename,
                  log_console=args.log_console, skylark=args.skylark, 
-                 serial_upgrade=args.serial_upgrade) as console: 
+                 serial_upgrade=args.serial_upgrade, use_assistance=args.assistance) as console:
       console.configure_traits()
 
 # Force exit, even if threads haven't joined
